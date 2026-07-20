@@ -3,15 +3,16 @@ from unittest import mock
 
 from django.utils.timezone import now as timezone_now
 
+from zerver.actions.realm_settings import do_set_realm_property
 from zerver.lib.cache import cache_delete, to_dict_cache_key_id
 from zerver.lib.display_recipient import get_display_recipient
 from zerver.lib.markdown import version as markdown_version
 from zerver.lib.message import messages_for_ids
 from zerver.lib.message_cache import MessageDict, sew_messages_and_reactions
 from zerver.lib.per_request_cache import flush_per_request_caches
-from zerver.lib.test_classes import ZulipTestCase
+from zerver.lib.test_classes import ZulipTestCase, get_topic_messages
 from zerver.lib.test_helpers import make_client
-from zerver.lib.topic import TOPIC_LINKS, TOPIC_NAME
+from zerver.lib.topic import RESOLVED_TOPIC_PREFIX, TOPIC_LINKS, TOPIC_NAME
 from zerver.lib.types import DisplayRecipientT, UserDisplayRecipient
 from zerver.models import Message, Reaction, Realm, RealmFilter, Recipient, Stream, UserProfile
 from zerver.models.realms import MessageEditHistoryVisibilityPolicyEnum, get_realm
@@ -335,6 +336,47 @@ class MessageDictTest(ZulipTestCase):
         )
 
         self.assert_json_error(result, "Invalid anchor")
+
+    def test_resolve_topic_notification_message_type(self) -> None:
+        iago = self.example_user("iago")
+        self.login("iago")
+        do_set_realm_property(iago.realm, "default_language", "en", acting_user=iago)
+        stream = self.make_stream("Norway")
+        self.subscribe(iago, stream.name)
+        original_topic = "before resolved"
+        resolved_topic = RESOLVED_TOPIC_PREFIX + original_topic
+
+        msg_id = self.send_stream_message(
+            iago,
+            stream.name,
+            topic_name=original_topic,
+            content="test message",
+        )
+
+        result = self.client_patch(
+            "/json/messages/" + str(msg_id),
+            {
+                "topic": resolved_topic,
+                "propagate_mode": "change_all",
+            },
+        )
+        self.assert_json_success(result)
+
+        messages = get_topic_messages(iago, stream, resolved_topic)
+        notification = messages[-1]
+
+        self.assert_length(messages, 2)
+        self.assertEqual(notification.type, Message.MessageType.RESOLVE_TOPIC_NOTIFICATION)
+        self.assertEqual(
+            notification.content,
+            f"@_**Iago|{iago.id}** has marked this topic as resolved.",
+        )
+
+        wide = MessageDict.wide_dict(notification)
+        fetch = MessageDict.ids_to_dict([notification.id])[0]
+
+        self.assertEqual(wide["message_type"], Message.MessageType.RESOLVE_TOPIC_NOTIFICATION)
+        self.assertEqual(fetch["message_type"], Message.MessageType.RESOLVE_TOPIC_NOTIFICATION)
 
 
 class MessageHydrationTest(ZulipTestCase):

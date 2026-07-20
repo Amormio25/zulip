@@ -319,6 +319,7 @@ class MessageDict:
                 "sender_id": message.sender.id,
                 "sending_client__name": message.sending_client.name,
                 "sender__realm_id": message.sender.realm_id,
+                "type": message.type,
             }
             for message in messages
         ]
@@ -345,6 +346,7 @@ class MessageDict:
             "sender_id",
             "sending_client__name",
             "sender__realm_id",
+            "type",
         ]
         # Uses index: zerver_message_pkey
         messages = Message.objects.filter(id__in=needed_ids).values(*fields)
@@ -381,6 +383,7 @@ class MessageDict:
             recipient_type_id=row["recipient__type_id"],
             reactions=row["reactions"],
             submessages=row["submessages"],
+            message_type=row["type"],
         )
 
     @staticmethod
@@ -402,6 +405,7 @@ class MessageDict:
         recipient_type_id: int,
         reactions: list[RawReactionRow],
         submessages: list[dict[str, Any]],
+        message_type: int,
     ) -> dict[str, Any]:
         obj = dict(
             id=message_id,
@@ -416,6 +420,7 @@ class MessageDict:
 
         obj[TOPIC_NAME] = topic_name
         obj["sender_realm_id"] = sender_realm_id
+        obj["message_type"] = message_type
 
         # Render topic_links with the stream's realm instead of the
         # sender's realm; this is important for messages sent by
@@ -504,7 +509,7 @@ class MessageDict:
     @staticmethod
     def hydrate_recipient_info(obj: dict[str, Any], display_recipient: DisplayRecipientT) -> None:
         """
-        This method hyrdrates recipient info with things
+        This method hydrates recipient info with things
         like full names and emails of senders.  Eventually
         our clients should be able to hyrdrate these fields
         themselves with info they already have on users.
