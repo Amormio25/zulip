@@ -17,7 +17,7 @@ import * as blueslip from "./blueslip.ts";
 import * as compose_fade from "./compose_fade.ts";
 import * as condense from "./condense.ts";
 import * as hash_util from "./hash_util.ts";
-import {$t} from "./i18n.ts";
+import {$t, $t_html} from "./i18n.ts";
 import * as internal_url from "./internal_url.ts";
 import * as message_edit from "./message_edit.ts";
 import type {MessageList} from "./message_list.ts";
@@ -1041,12 +1041,40 @@ export class MessageListView {
                 include_sender = false;
             }
 
+            let display_message = message;
+            if (
+                message.message_type === resolved_topic.RESOLVE_TOPIC_NOTIFICATION &&
+                message.type === "stream"
+            ) {
+                const parsed_html = new DOMParser().parseFromString(message.content, "text/html");
+                const mentioned_user_node = parsed_html.querySelector(".user-mention.silent");
+                if (mentioned_user_node !== null) {
+                    const mentioned_user_html = mentioned_user_node.outerHTML;
+                    const translated_html = resolved_topic.is_resolved(message.topic)
+                        ? $t_html(
+                              {
+                                  defaultMessage:
+                                      "<z-user></z-user> has marked this topic as resolved.",
+                              },
+                              {"z-user": () => mentioned_user_html},
+                          )
+                        : $t_html(
+                              {
+                                  defaultMessage:
+                                      "<z-user></z-user> has marked this topic as unresolved.",
+                              },
+                              {"z-user": () => mentioned_user_html},
+                          );
+                    display_message = {...message, content: `<p>${translated_html}</p>`};
+                }
+            }
+
             const calculated_variables = this.get_calculated_message_container_variables(
                 message,
                 include_sender,
             );
             const message_container = {
-                msg: message,
+                msg: display_message,
                 include_recipient,
                 ...(stream_url && {stream_url}),
                 ...(topic_url && {topic_url}),

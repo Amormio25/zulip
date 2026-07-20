@@ -1,3 +1,8 @@
+/** Matches Message.MessageType.RESOLVE_TOPIC_NOTIFICATION in
+ * zerver/models/messages.py
+ */
+export const RESOLVE_TOPIC_NOTIFICATION = 2;
+
 /** The canonical form of the resolved-topic prefix. */
 export const RESOLVED_TOPIC_PREFIX = "✔ ";
 
