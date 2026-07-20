@@ -4,6 +4,7 @@ const assert = require("node:assert/strict");
 
 const _ = require("lodash");
 
+const {make_stream} = require("./lib/example_stream.cjs");
 const {mock_esm, set_global, zrequire} = require("./lib/namespace.cjs");
 const {run_test, noop} = require("./lib/test.cjs");
 const {$} = require("./lib/zjquery.cjs");
@@ -30,11 +31,32 @@ mock_esm("../src/people", {
     maybe_get_user_by_id: noop,
 });
 
+// build_message_group calls
+mock_esm("../src/reactions", {
+    get_message_reactions: () => [],
+});
+mock_esm("../src/message_reminder", {
+    get_reminders: () => [],
+});
+mock_esm("../src/message_edit", {
+    is_topic_editable: () => false,
+});
+mock_esm("../src/settings_data", {
+    user_can_resolve_topic: () => true,
+    using_dark_theme: () => false,
+});
+mock_esm("../src/hash_util", {
+    channel_url_by_user_setting: () => "#stub-url",
+    by_stream_topic_url: () => "#stub-topic-url",
+});
+
 const {Filter} = zrequire("../src/filter");
 const {MessageListView} = zrequire("../src/message_list_view");
 const message_list = zrequire("message_list");
 const {MessageListData} = zrequire("message_list_data");
 const muted_users = zrequire("muted_users");
+const stream_data = zrequire("stream_data");
+const resolved_topic = zrequire("resolved_topic");
 
 let next_timestamp = 1500000000;
 
@@ -1390,4 +1412,79 @@ test("render_windows", ({mock_template}) => {
         move_end: 250,
         no_move_start: 0,
     });
+});
+
+test("build_message_groups translates resolved topic notification", () => {
+    stream_data.add_sub_for_tests(make_stream({stream_id: 2, name: "foo"}));
+
+    function build_resolve_topic_notification_message(overrides = {}) {
+        return {
+            id: _.uniqueId("test"),
+            type: "stream",
+            is_stream: true,
+            is_private: false,
+            stream_id: 2,
+            display_recipient: "foo",
+            topic: "✔ test",
+            topic_links: [],
+            sender_id: 10,
+            sender_email: "test@example.com",
+            timestamp: (next_timestamp += 1),
+            message_type: resolved_topic.RESOLVE_TOPIC_NOTIFICATION,
+
+            // Simulate server-stored message in the realm's default language (e.g. Spanish)
+            content:
+                '<p><span class="user-mention silent" data-user-id="5">Iago</span> ha marcado este tema como resuelto.</p>',
+            ...overrides,
+        };
+    }
+
+    function build_list_view() {
+        const filter = new Filter([{operator: "stream", operand: "foo"}]);
+
+        const list = new message_list.MessageList({
+            data: new MessageListData({
+                excludes_muted_topics: false,
+                filter,
+            }),
+            is_node_test: true,
+        });
+
+        return new MessageListView(list, true, true);
+    }
+
+    const view = build_list_view();
+    const resolved_message = build_resolve_topic_notification_message({});
+    let groups = view.build_message_groups([resolved_message]);
+
+    assert.equal(groups.length, 1);
+    assert.equal(groups[0].message_containers.length, 1);
+    assert.equal(
+        groups[0].message_containers[0].msg.message_type,
+        resolved_topic.RESOLVE_TOPIC_NOTIFICATION,
+    );
+    assert.equal(groups[0].topic_is_resolved, true);
+    assert.equal(
+        groups[0].message_containers[0].msg.content,
+        '<p>translated: <span class="user-mention silent" data-user-id="5">Iago</span> has marked this topic as resolved.</p>',
+    );
+
+    const unresolved_message = build_resolve_topic_notification_message({
+        topic: "test",
+        content:
+            "<p><span class='user-mention silent' data-user-id='5'>Iago</span> ha marcado este tema como no resuelto.</p>",
+    });
+    groups = view.build_message_groups([unresolved_message]);
+
+    assert.equal(groups.length, 1);
+    assert.equal(groups[0].message_containers.length, 1);
+    assert.equal(
+        groups[0].message_containers[0].msg.message_type,
+        resolved_topic.RESOLVE_TOPIC_NOTIFICATION,
+    );
+    assert.equal(groups[0].topic_is_resolved, false);
+    assert.equal(
+        groups[0].message_containers[0].msg.content,
+        '<p>translated: <span class="user-mention silent" data-user-id="5">Iago</span> has marked this topic as unresolved.</p>',
+    );
 });

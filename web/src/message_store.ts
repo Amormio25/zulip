@@ -101,6 +101,7 @@ export const raw_message_schema = z.intersection(
             submessages: z.array(submessage_schema),
             timestamp: z.number(),
             flags: z.array(z.string()),
+            message_type: z.optional(z.number()),
         }),
         z.discriminatedUnion("type", [
             z.object({

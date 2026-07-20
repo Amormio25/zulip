@@ -58,6 +58,7 @@ export const server_message_schema = z.intersection(
         // sender_realm_str: z.string(),
         submessages: submessage_schema,
         timestamp: z.number(),
+        message_type: z.optional(z.number()),
     }),
     z.discriminatedUnion("type", [
         z.object({
